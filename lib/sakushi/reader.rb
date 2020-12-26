@@ -3,13 +3,16 @@ module Sakushi
     def initialize(engine, tokenizer)
       @engine = engine
       @tokenizer = tokenizer
+      @buf = []
     end
 
     def read
-      t = @tokenizer.next_token
+      t = next_token()
       case t.kind
       when :EOF
         nil
+      when "'"
+        @engine.quote(read())
       when '('
         read_list
       when :IDENT_BEGIN
@@ -25,9 +28,23 @@ module Sakushi
 
     private
 
+    def next_token
+      @buf.empty? ? @tokenizer.next_token : @buf.pop
+    end
+
+    def pushback_token(t)
+      @buf.push t
+      nil
+    end
+
     def read_error(cause, msg)
       raise "#{cause.lineno}:#{cause.column}: #{msg}"
     end
+
+    CHARS = {
+      'space' => ' '.ord,
+      'tab'   => "\t".ord,
+    }
 
     def parse_atom(t)
       case
@@ -39,20 +56,29 @@ module Sakushi
         @engine.true
       when t.value == '#f'
         @engine.false
+      when t.value.start_with?('#\\')
+        c = t.value.delete_prefix('#\\')
+        return @engine.char(c.ord) if c.length == 1
       else
         @engine.intern t.value
       end
     end
 
     def read_ident(beg)
+      name = read_token_sequence(:IDENT_CONTENT, :IDENT_END)
+      read_error(beg, "unterminated symbol literal") unless name
+      @engine.intern name
     end
 
     def read_string(beg)
+      content = read_token_sequence(:STRING_CONTENT, :STRING_END)
+      read_error(beg, "unterminated string literal") unless content
+      @engine.string content
     end
 
-    def read_token_sequence(beg, content, fin)
+    def read_token_sequence(content, fin)
       buf = []
-      while t = @tokenizer.next_token
+      while t = next_token()
         case t.kind
         when :EOF
           return nil
@@ -68,6 +94,21 @@ module Sakushi
     end
 
     def read_list
+      t = next_token()
+      return @engine.nil if t.kind == ')'   # a) empty list
+      pushback_token t
+
+      car = read()
+      t = next_token()
+      if t.kind == '.'
+        cdr = read()
+        t = next_token()
+        read_error(t, "expect end of list, unexpected token: #{t}") unless t.kind == ')'
+        return @engine.cons(car, cdr)   # b) dot pair
+      end
+      pushback_token t
+
+      @engine.cell(car, read_list())  # c) read rest list recursively
     end
   end
 end

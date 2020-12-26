@@ -51,7 +51,7 @@ module Sakushi
         ;
       when s.scan(/#\|/)
         return :scan_comment
-      when s.scan(/[.()]/)
+      when s.scan(/[.()']/)
         emit s[0], s[0]
       when s.scan(/\|/)
         emit :IDENT_BEGIN, s[0]
