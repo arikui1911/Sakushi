@@ -44,6 +44,7 @@ module Sakushi
     CHARS = {
       'space' => ' '.ord,
       'tab'   => "\t".ord,
+      'newline' => "\n".ord,
     }
 
     def parse_atom(t)
@@ -52,15 +53,18 @@ module Sakushi
         @engine.float x
       when n = Kernel.Integer(t.value, exception: false)
         @engine.integer n
-      when t.value == '#t'
+      when t.value == '#t' || t.value == '#T'
         @engine.true
-      when t.value == '#f'
+      when t.value == '#f' || t.value == '#F'
         @engine.false
       when t.value.start_with?('#\\')
         c = t.value.delete_prefix('#\\')
         return @engine.char(c.ord) if c.length == 1
+        @engine.char CHARS.fetch(c.downcase){
+          read_error t, "invalid charactor literal: #{t.value.inspect}"
+        }
       else
-        @engine.intern t.value
+        @engine.intern t.value.downcase
       end
     end
 
@@ -108,7 +112,7 @@ module Sakushi
       end
       pushback_token t
 
-      @engine.cell(car, read_list())  # c) read rest list recursively
+      @engine.cons(car, read_list())  # c) read rest list recursively
     end
   end
 end
